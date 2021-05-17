@@ -2,9 +2,9 @@
 Platformer High school project
 
 # Screens
-![Uploading Screenshot (17).png…]()
-![Uploading Screenshot (18).png…]()
-![Uploading Screenshot (19).png…]()
+![Screenshot (1)](https://user-images.githubusercontent.com/84294798/118490773-491b6000-b6ec-11eb-9fdb-2363c0b6a2e4.png)
+![Screenshot (3)](https://user-images.githubusercontent.com/84294798/118490776-49b3f680-b6ec-11eb-842f-ca408f2b5f72.png)
+
 
 # Directions and Controls
 Use the arrow keys to move left and right and SPACE to jump
