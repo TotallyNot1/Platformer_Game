@@ -1,7 +1,9 @@
 # Imports
 import pygame
-import random
 import json
+import os
+import sys
+import math
 
 # Window settings
 GRID_SIZE = 64
@@ -34,7 +36,7 @@ LOSE = 2
 LEVEL_COMPLETE = 3
 
 # Load fonts
-font_xl = pygame.font.Font('assets/fonts/Dinomouse-Regular.otf', 96)
+font_xl = pygame.font.Font(None, 96)
 font_lg = pygame.font.Font('assets/fonts/Dinomouse-Regular.otf', 60)
 font_md = pygame.font.Font('assets/fonts/Dinomouse-Regular.otf', 32)
 font_sm = pygame.font.Font('assets/fonts/Dinomouse-Regular.otf', 24)
@@ -52,7 +54,7 @@ spikeman_img = pygame.image.load('assets/images/characters/Test#2.png').convert_
 laser_img = pygame.image.load('assets/images/characters/Laser.png').convert_alpha()
 flag_img = pygame.image.load('assets/images/tiles/Top.png').convert_alpha()
 pole_img = pygame.image.load('assets/images/tiles/Base.png').convert_alpha()
-    #bomb_img = pygame.image.load('assets/images/').convert_alpha()
+traps_img = pygame.image.load('assets/images/characters/Bomb_img.png').convert_alpha()
 # Load sounds
 laser_snd = pygame.mixer.Sound('assets/sounds/Laser.wav')
 
@@ -96,6 +98,7 @@ class Hero(Entity):
         self.gems = 0
         self.score = 0
         self.hurt_timer = 0
+        self.shoot_clock = 0
         
     def move_to(self, x, y):
         self.rect.centerx = x * GRID_SIZE + GRID_SIZE // 2
@@ -119,12 +122,16 @@ class Hero(Entity):
             self.vy = -1 * self.jump_power
             
     def shoot(self):
-           x = self.rect.centerx
-           y = self.rect.top
+        if self.shoot_clock <= 0:
+            laser = Laser(laser_img)
+            bullet.rect.centerx = self.rect.centerx
+            bullet.rect.centery = self.rect.centery
+            laser.theta = laser.find_theta(self)
+            self.lasers.add(laser)
+                        
+            self.shoot_clock = 20
 
-           lasers.add( Laser(x, y, laser_img) )
-            
-           laser_snd.play()
+            laser_snd.play()
             
     '''def apply_momentum(self):
         self.vx += momentum
@@ -201,17 +208,73 @@ class Hero(Entity):
         self.check_items()
         self.check_enemies()
         self.reached_goal()
+
+        self.shoot_clock -= 1
+
+        
 class Laser(Entity):
     
     def __init__(self, x, y, image):
         super().__init__(x, y, image)
 
-        self.speed = 5
-        
-    def update(self):
-        self.rect.x -= self.speed
+        self.image = image
+        self.mask = pygame.mask.from_surface(self.image)
+        self.rect = self.image.get_rect()
 
-        if self.rect.right < 0:
+        self.speed = 30
+        self.theta = None
+        self.dis_dis = None
+        self.velocity = []
+
+    def shoot(self):
+        SHOOT_SOUND.play()
+
+    def find_theta(self, hero):
+        offset_x, offset_y = game.calculate_offset()
+        pos = pygame.mouse.get_pos()
+        dis_x = (pos[0] + (-1*offset_x)) - self.rect.centerx
+        dis_y = pos[1] - self.rect.centery
+        self.dis_dis = math.sqrt((dis_x**2 + dis_y**2))
+
+        self.theta = math.asin(dis_y/self.dis_dis)
+
+        self.find_velocity(hero)
+
+    def find_velocity(self, hero):
+        if not hero.facing_right:
+            vx = math.cos(self.theta) * -1 * self.speed
+        else:
+            vx = math.cos(self.theta) * self.speed
+        vy = math.sin(self.theta) * self.speed
+        self.velocity = [vx, vy]
+
+    def check_walls_and_blocks(self):
+        hit_list = pygame.sprite.spritecollide(self, level.main_tiles, False)
+
+        for hit in hit_list:
+            if self.velocity[0] > 0:
+                self.kill()
+            elif self.velocity[0] < 0:
+                self.kill()
+            self.velocity[0] = 0
+
+        hit_list = pygame.sprite.spritecollide(self, level.main_tiles, False)
+
+        for hit in hit_list:
+            if self.velocity[1] > 0:
+                self.kill()
+            elif self.velocity[1] < 0:
+                self.kill()
+                self.velocity[1] = 0
+
+
+    def update(self, level):
+        self.rect.x += self.velocity[0]
+        self.rect.y += self.velocity[1]
+
+        self.check_walls_and_blocks(level)
+
+        if self.rect.left > level.width or self.rect.right < 0:
             self.kill()
 
         
@@ -248,15 +311,18 @@ class Enemy(Entity):
         self.rect.x += self.vx
 
         hits = pygame.sprite.spritecollide(self, platforms, False)
-        
+        must_reverse = False
         for hit in hits:
             if self.vx > 0:
                 self.rect.right = hit.rect.left
-                self.reverse()
+                must_reverse = True
             if self.vx < 0:
                 self.rect.left = hit.rect.right
-                self.reverse()
+                must_reverse = True
                 
+        if must_reverse:
+            self.reverse()
+            
         self.rect.y += self.vy
         
         hits = pygame.sprite.spritecollide(self, platforms, False)
@@ -267,7 +333,7 @@ class Enemy(Entity):
             elif self.vy < 0:
                 self.rect.top = hit.rect.bottom
                 
-                self.vy = 0
+            self.vy = 0
             
     def check_world_edges(self):
         if self.rect.left < 0:
@@ -292,6 +358,11 @@ class Enemy(Entity):
 
         if must_reverse:
             self.reverse()
+
+    def check_lasers(self, lasers):
+        hit_list = pygame.sprite.spritecollide(self, lasers, True)
+        for hit in hit_list:
+            self.kill()
             
 class Spikeball(Enemy):
     
@@ -311,6 +382,7 @@ class Spikeball(Enemy):
         self.apply_gravity()
         self.move_and_check_platforms()
         self.check_world_edges()
+        self.check_lasers
 
 class Spikeman(Enemy):
     
@@ -330,6 +402,7 @@ class Spikeman(Enemy):
         self.move_and_check_platforms()
         self.check_world_edges()
         self.check_platform_edges()
+        self.check_lasers
 
 class Cloud(Enemy):
     
@@ -344,18 +417,16 @@ class Cloud(Enemy):
 
         if self.heart <= 0:
             self.kill()
-            
+        self.move_and_check_platforms()
         self.check_world_edges()
-        
+        self.check_lasers
+            
 class Flag(Entity):
     
     def __init__(self, x, y, image):
         super().__init__(x, y, image)
-        
-'''class Traps(self):
+            
     
-    def __init__(self, x, y, image):
-        super().__init__(x, y, image)'''
 
         
 # Helper functions
@@ -446,6 +517,7 @@ def start_level():
     lasers = pygame.sprite.Group()
     goal = pygame.sprite.Group()
     all_sprites = pygame.sprite.Group()
+    traps = pygame.sprite.Group()
     
     # load level file here
     with open('assets/levels/world-1.json') as f:
@@ -480,6 +552,9 @@ def start_level():
         
     for loc in data['gem_locs']:
         items.add(Gem(loc[0], loc[1], gem_img))
+
+    def load_lasers(self):
+        self.lasers = pygame.sprite.Group()
 
     gravity = data['gravity']
     terminal_velocity = data['terminal_velocity']
@@ -519,7 +594,6 @@ while running:
                 if event.key == pygame.K_r:
                     start_game()
                     start_level()
-            when stage == LOSE:
                 pygame.mixer.music.load(lose_music)
                 pygame.mixer.music.play(-1)
 
@@ -547,11 +621,13 @@ while running:
             pygame.mixer.music.load(victory_theme)
             pygame.mixer.music.play(-1)
             countdown = 2 * FPS
+            
         elif stage == LEVEL_COMPLETE:
             countdown -= 1
             if countdown <= 0:
                 start_level()
                 stage = PLAYING
+            
     if hero.rect.centerx < WIDTH // 2:
         offset_x = 0
     elif hero.rect.centerx > world_width - WIDTH // 2:
